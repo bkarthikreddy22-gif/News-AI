@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import axios from "axios";
 import {
   ArrowLeft,
   ArrowRight,
@@ -12,17 +13,45 @@ import {
 function Analyze() {
   const [inputType, setInputType] = useState("url");
   const [newsInput, setNewsInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const navigate = useNavigate();
 
-  const handleAnalyze = () => {
+  const handleAnalyze = async () => {
     if (!newsInput.trim()) {
       return;
     }
 
-    // Temporary navigation.
-    // Later this will call our AI backend.
-    navigate("/results");
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await axios.post(
+        "http://127.0.0.1:8000/analyze",
+        {
+          content: newsInput,
+        }
+      );
+
+      console.log("Backend response:", response.data);
+
+      navigate("/results", {
+        state: {
+          analysis: response.data,
+          inputType: inputType,
+          originalInput: newsInput,
+        },
+      });
+    } catch (error) {
+      console.error("Analysis error:", error);
+
+      setError(
+        "Unable to connect to the NewsAI backend. Please make sure the backend is running."
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -87,6 +116,7 @@ function Analyze() {
                 onClick={() => {
                   setInputType("url");
                   setNewsInput("");
+                  setError("");
                 }}
                 className={`rounded-xl border p-5 text-left transition ${
                   inputType === "url"
@@ -127,6 +157,7 @@ function Analyze() {
                 onClick={() => {
                   setInputType("text");
                   setNewsInput("");
+                  setError("");
                 }}
                 className={`rounded-xl border p-5 text-left transition ${
                   inputType === "text"
@@ -184,7 +215,10 @@ function Analyze() {
                 <input
                   type="url"
                   value={newsInput}
-                  onChange={(e) => setNewsInput(e.target.value)}
+                  onChange={(e) => {
+                    setNewsInput(e.target.value);
+                    setError("");
+                  }}
                   placeholder="https://example.com/news/article"
                   className="w-full bg-transparent text-slate-700 outline-none placeholder:text-slate-400"
                 />
@@ -193,7 +227,10 @@ function Analyze() {
             ) : (
               <textarea
                 value={newsInput}
-                onChange={(e) => setNewsInput(e.target.value)}
+                onChange={(e) => {
+                  setNewsInput(e.target.value);
+                  setError("");
+                }}
                 rows="12"
                 placeholder="Paste the complete news article here..."
                 className="w-full resize-y rounded-xl border border-slate-300 bg-white p-4 text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
@@ -216,15 +253,25 @@ function Analyze() {
             </div>
 
 
+            {/* Error Message */}
+            {error && (
+              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+                {error}
+              </div>
+            )}
+
+
             {/* Analyze Button */}
             <button
               onClick={handleAnalyze}
-              disabled={!newsInput.trim()}
+              disabled={!newsInput.trim() || loading}
               className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 py-4 font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Analyze Credibility
+              {loading ? "Analyzing..." : "Analyze Credibility"}
 
-              <ArrowRight className="h-5 w-5" />
+              {!loading && (
+                <ArrowRight className="h-5 w-5" />
+              )}
             </button>
 
           </div>
@@ -251,6 +298,7 @@ function Analyze() {
                   <span className="font-semibold text-slate-900">
                     Claim Extraction
                   </span>
+
                   <p className="mt-1">
                     Identify factual claims.
                   </p>
@@ -260,6 +308,7 @@ function Analyze() {
                   <span className="font-semibold text-slate-900">
                     Source Analysis
                   </span>
+
                   <p className="mt-1">
                     Evaluate source credibility.
                   </p>
@@ -269,6 +318,7 @@ function Analyze() {
                   <span className="font-semibold text-slate-900">
                     Manipulation Detection
                   </span>
+
                   <p className="mt-1">
                     Analyze language patterns.
                   </p>
