@@ -1,3 +1,5 @@
+import { useState } from "react";
+import axios from "axios";
 import { Link, useLocation } from "react-router-dom";
 import {
   ArrowLeft,
@@ -15,6 +17,41 @@ function Results() {
   const location = useLocation();
 
   const analysis = location.state?.analysis;
+  const [claimVerifications, setClaimVerifications] = useState({});
+  const [verifyingClaim, setVerifyingClaim] = useState(null);
+  const [verificationErrors, setVerificationErrors] = useState({});
+
+  const verifyClaim = async (claim, index, sourceDomain) => {
+    const claimText = typeof claim === "string" ? claim : claim?.text;
+
+    if (!claimText?.trim()) return;
+
+    setVerifyingClaim(index);
+    setVerificationErrors((current) => ({ ...current, [index]: "" }));
+
+    try {
+      const response = await axios.post(
+        "http://127.0.0.1:8000/verify-claim",
+        {
+          claim: claimText.trim(),
+          ...(sourceDomain ? { source_domain: sourceDomain } : {}),
+        }
+      );
+      setClaimVerifications((current) => ({
+        ...current,
+        [index]: response.data,
+      }));
+    } catch (error) {
+      setVerificationErrors((current) => ({
+        ...current,
+        [index]:
+          error.response?.data?.detail ||
+          "Unable to verify this claim. Check that the backend is running and try again.",
+      }));
+    } finally {
+      setVerifyingClaim(null);
+    }
+  };
 
   // If someone opens /results directly without analyzing an article
   if (!analysis) {
@@ -42,8 +79,12 @@ function Results() {
     );
   }
 
-  const score = analysis.credibility_score ?? 0;
-  const confidence = analysis.confidence ?? 0;
+  const rawScore = Number(analysis.credibility_score ?? 0);
+  const score = Number.isFinite(rawScore) ? Math.max(0, Math.min(100, rawScore)) : 0;
+  const rawConfidence = Number(analysis.confidence ?? 0);
+  const confidence = Number.isFinite(rawConfidence)
+    ? Math.max(0, Math.min(100, rawConfidence))
+    : 0;
 
   const breakdown = analysis.score_breakdown ?? {};
 
@@ -72,7 +113,7 @@ function Results() {
 
       {/* Header */}
       <section className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-7xl px-6 py-8">
+        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
 
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
 
@@ -111,7 +152,7 @@ function Results() {
 
 
       {/* Main */}
-      <section className="mx-auto max-w-7xl px-6 py-10">
+      <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-10">
 
         {/* Article */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -161,7 +202,7 @@ function Results() {
         <div className="mt-6 grid gap-6 lg:grid-cols-3">
 
           {/* Main Score */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm lg:col-span-1">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8 lg:col-span-1">
 
             <div className="text-center">
 
@@ -227,7 +268,7 @@ function Results() {
 
 
           {/* Score Breakdown */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm lg:col-span-2">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8 lg:col-span-2">
 
             <div className="flex items-center justify-between">
 
@@ -315,18 +356,19 @@ function Results() {
             <div>
 
               <p className="text-sm font-semibold text-blue-900">
-                AI Analysis Confidence
+                Analysis Coverage Indicator
               </p>
 
               <p className="mt-1 text-sm text-blue-700">
-                Confidence in the generated credibility assessment.
+                An estimate based on article length, not the probability that
+                the article is true.
               </p>
 
             </div>
 
             <div className="flex items-center gap-4">
 
-              <div className="h-3 w-40 overflow-hidden rounded-full bg-blue-200">
+              <div className="h-3 w-28 overflow-hidden rounded-full bg-blue-200 sm:w-40">
 
                 <div
                   className="h-full rounded-full bg-blue-600 transition-all"
@@ -457,15 +499,88 @@ function Results() {
                     {index + 1}
                   </div>
 
-                  <div>
+                  <div className="min-w-0 flex-1">
 
-                    <p className="text-sm leading-6 text-slate-700">
-                      {claim.text}
+                    <p className="break-words text-sm leading-6 text-slate-700">
+                      {typeof claim === "string" ? claim : claim.text}
                     </p>
 
-                    <span className="mt-2 inline-flex rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-                      {claim.status}
-                    </span>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="inline-flex rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                        {typeof claim === "string" ? "Needs verification" : claim.status || "Needs verification"}
+                      </span>
+                      {claim?.method && (
+                        <span className="text-xs text-slate-400">Method: {claim.method.replaceAll("_", " ")}</span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => verifyClaim(claim, index, source.domain)}
+                      disabled={verifyingClaim === index}
+                      className="mt-3 inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <ShieldCheck className="h-4 w-4" />
+                      {verifyingClaim === index ? "Checking sources..." : "Verify claim"}
+                    </button>
+
+                    {verificationErrors[index] && (
+                      <p role="alert" className="mt-2 text-sm text-red-600">
+                        {verificationErrors[index]}
+                      </p>
+                    )}
+
+                    {claimVerifications[index] && (
+                      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="font-semibold text-slate-900">
+                          Result: {claimVerifications[index].overall_assessment || "Insufficient evidence"}
+                        </p>
+                        <p className="mt-1 text-sm leading-6 text-slate-600">
+                          {claimVerifications[index].warning ||
+                            "This is an automated preliminary assessment of retrieved sources, not a definitive verdict."}
+                        </p>
+
+                        {Array.isArray(claimVerifications[index].results) && claimVerifications[index].results.length > 0 ? (
+                          <div className="mt-4 space-y-3">
+                            {claimVerifications[index].results.map((item, resultIndex) => (
+                              <div key={`${index}-${resultIndex}`} className="rounded-lg border border-slate-200 bg-white p-3">
+                                {item.url && /^https?:\/\//i.test(item.url) ? (
+                                  <a
+                                    href={item.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="font-semibold text-blue-700 hover:underline"
+                                  >
+                                    {item.title || item.headline || item.source || "Open source article"}
+                                  </a>
+                                ) : (
+                                  <p className="font-semibold text-slate-900">
+                                    {item.title || item.headline || item.source || "Retrieved article"}
+                                  </p>
+                                )}
+                                {(item.source || item.publisher) && (
+                                  <p className="mt-1 text-xs text-slate-500">
+                                    {item.source || item.publisher}
+                                  </p>
+                                )}
+                                {(item.assessment || item.label) && (
+                                  <p className="mt-2 text-xs font-semibold text-slate-700">
+                                    Assessment: {item.assessment || item.label}
+                                  </p>
+                                )}
+                                {(item.summary || item.snippet || item.description) && (
+                                  <p className="mt-2 text-sm leading-5 text-slate-600">
+                                    {item.summary || item.snippet || item.description}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-sm text-slate-500">No usable source articles were returned for this claim.</p>
+                        )}
+                      </div>
+                    )}
 
                   </div>
 
@@ -532,7 +647,7 @@ function Results() {
               </h2>
 
               <p className="mt-1 text-sm text-slate-500">
-                Sources identified during credibility analysis.
+                Publisher information for the submitted article. Use “Verify claim” above to retrieve related articles.
               </p>
 
             </div>

@@ -1,3 +1,4 @@
+from ai_claims import classify_candidate_claims
 import xml.etree.ElementTree as ET
 from urllib.parse import quote_plus, urlparse
 import ipaddress
@@ -611,13 +612,42 @@ def analyze_news(request: NewsRequest):
         request.content
     )
 
+    
     # --------------------------------------------------------
     # 3. Claim Extraction
     # --------------------------------------------------------
 
-    claims = extract_claims(
-        content
-    )
+# Keep the existing rule-based extraction as the baseline.
+    claims = extract_claims(content)
+
+    # Use NLP as an additional signal, not as the sole extractor.
+    try:
+        nlp_claims = classify_candidate_claims(content)
+
+        existing_texts = {
+            claim["text"].strip().casefold()
+            for claim in claims
+        }
+
+        for claim in nlp_claims:
+            claim_text = claim["text"].strip()
+            normalized_text = claim_text.casefold()
+
+            if normalized_text not in existing_texts:
+                claims.append(claim)
+                existing_texts.add(normalized_text)
+
+            if len(claims) >= 5:
+                break
+
+    except Exception as exc:
+        # Keep the existing analysis working if NLP fails.
+        print(f"NLP claim classification failed: {exc}")
+
+    # Preserve the existing maximum of five claims.
+    claims = claims[:5]
+
+    
 
     # --------------------------------------------------------
     # 4. Source Analysis
